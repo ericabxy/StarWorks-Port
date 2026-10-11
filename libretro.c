@@ -14,12 +14,30 @@
 #include <math.h>
 
 #include "libretro.h"
+#include "graphics.h"
+#include "types.h"
+#include "player.h"
+#include "models.h"
+#include "bullet.h"
+
+static int shootCooldown = 0;
+
+camera playerCamera = {
+	.position = {0, 50, 0}, 
+	.rotation = {0, 0, 0}
+};
+
+ship player = {
+	.shipModel = &arwing,
+	.rotation = {0,50,0},
+	.position = {0,0,100}
+};
 
 #define LIBRARY_NAME "StarWorks Port"
 #define LIBRARY_VERSION "v1"
 
-#define VIDEO_WIDTH 320
-#define VIDEO_HEIGHT 240
+#define VIDEO_WIDTH 280
+#define VIDEO_HEIGHT 200
 #define VIDEO_PIXELS VIDEO_WIDTH * VIDEO_HEIGHT
 #define VIDEO_ASPECT_RATIO 4.0f / 3.0f
 
@@ -56,6 +74,7 @@ void retro_init(void)
    frame_buf = calloc(VIDEO_PIXELS, sizeof(uint32_t));
 
    /* Initialize state machine variables here. */
+   initBullets();
 }
 
 void retro_deinit(void)
@@ -179,13 +198,22 @@ static void update_input(void)
    for (port = 0; port < NUMBER_OF_CONTROLS; port ++)
    {
       if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP))
-         dir_y--;
+         player.position.y += 1;
       if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN))
-         dir_y++;
+         player.position.y -= 1;
       if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT))
-         dir_x--;
+         player.position.x -= 1;
       if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT))
-         dir_x++;
+         player.position.x += 1;
+      if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B) && shootCooldown == 0)
+      {
+         addBullet(
+            (point3D) {player.position.x, player.position.y, player.position.z + 100},
+            (smallPoint3D) {0, 0, 10},
+            0 // player
+        );
+        shootCooldown = 12;
+      }
 
       /* Respond to controller input here. */
 
@@ -215,6 +243,12 @@ static void video_callback(void)
    }
 
    /* Update video buffer here. */
+   updatePlayer(&player, &playerCamera);
+   updateBullets(&playerCamera);
+
+   drawGround(&playerCamera, buf);
+   drawBullets(&playerCamera, buf);
+   drawModel(player.shipModel, &playerCamera, player.position, 2, buf);
 
    video_cb(buf, VIDEO_WIDTH, VIDEO_HEIGHT, stride << 2);
 }
@@ -244,6 +278,11 @@ void retro_run(void)
    audio_callback();
 
    /* Update game machine state here. */
+   if (shootCooldown > 0) {
+      shootCooldown--;
+   }
+   for (unsigned x = 0; x < VIDEO_PIXELS; x ++)
+      frame_buf[x] = 0x000000;
 
    bool updated = false;
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
